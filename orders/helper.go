@@ -1,4 +1,4 @@
-package controllers
+package orders
 
 import (
 	"bytes"
@@ -10,12 +10,64 @@ import (
 	"myapp/models"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 )
 
-// helper function to get underlying details from the instrument key
+// GET /quote/optionchain
+func GetOptionChain(instrument_key, expiry_date string) {
+	baseURL := "https://api.upstox.com/v2/option/chain"
+	url := fmt.Sprintf("%s?instrument_key=%s&expiry_date=%s", baseURL, instrument_key, expiry_date)
+
+	client := &http.Client{}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	redisClient, err := config.NewRedisClient(context.Background(), os.Getenv("REDIS_URL"))
+	if err != nil {
+		fmt.Println("Error initializing Redis client:", err)
+		return
+	}
+	access_token, err := redisClient.GetVal("access_token")
+	if err != nil {
+		fmt.Println("Error getting access token:", err)
+		return
+	}
+
+	req.Header.Add("Authorization", "Bearer "+access_token)
+	req.Header.Add("Accept", "application/json")
+
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// fmt.Println(string(body))
+
+	var ltpResp models.OptionChainResp
+	err = json.Unmarshal(body, &ltpResp)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return
+	}
+
+	for _, data := range ltpResp.Data {
+		fmt.Println(data.StrikePrice, "CE: ", data.CallOptions.MarketData.Ltp, "PE: ", data.PutOptions.MarketData.Ltp)
+	}
+}
+
+// get underlying details from the option instrument key
 func getUnderlyingDetails(instrument_key string) (string, int) {
 	var underlying_instrument_key string
 	var quantity int
@@ -66,7 +118,7 @@ func getUnderlyingDetails(instrument_key string) (string, int) {
 	return underlying_instrument_key, quantity
 }
 
-// helper function to get access token from redis
+// get access token from redis
 func getAccessToken() string {
 	redisClient, err := config.NewRedisClient(context.Background(), os.Getenv("REDIS_URL"))
 	if err != nil {
@@ -81,7 +133,7 @@ func getAccessToken() string {
 	return access_token
 }
 
-// helper function to place order
+// place order
 func placeOrder(quantity int, instrument_key string, transaction_type string) {
 	order := models.OrderRequest{
 		Quantity: quantity,
@@ -132,7 +184,7 @@ func placeOrder(quantity int, instrument_key string, transaction_type string) {
 	}
 }
 
-// helper function to get last traded price
+// get last traded price
 func getLtp(instrument_key string) float64 {
 	baseURL := "https://api.upstox.com/v2/market-quote/ltp"
 	url := fmt.Sprintf("%s?instrument_key=%s", baseURL, instrument_key)
@@ -167,123 +219,4 @@ func getLtp(instrument_key string) float64 {
 		fmt.Println(string(body))
 	}
 	return ltp
-}
-
-
-// Places an order with triggers on underlying price
-func PlaceUTOrder(w http.ResponseWriter, r *http.Request) {
-	// read query params
-	entry, target, stoploss := r.URL.Query().Get("entry"), r.URL.Query().Get("target"), r.URL.Query().Get("stoploss")
-	entryPrice, _ := strconv.ParseFloat(entry, 64)
-	targetPrice, _ := strconv.ParseFloat(target, 64)
-	stoplossPrice, _ := strconv.ParseFloat(stoploss, 64)
-	fmt.Print("Entry: ", entryPrice, "Target: ", targetPrice, "Stoploss: ", stoplossPrice, "\n")
-
-	// get underlying instrument details
-	instrument_key := r.URL.Query().Get("instrument_key")
-	underlying_instrument_key, quantity := getUnderlyingDetails(instrument_key)
-	if underlying_instrument_key == "" || quantity == 0 {
-		return
-	}
-
-	// get access token
-	access_token := getAccessToken()
-	if access_token == "" {
-		return
-	}
-	
-	// define entry condition
-	var ltp float64
-	ltp = getLtp(underlying_instrument_key)
-	if ltp == 0 {
-		return
-	}
-	var checkEntryCondition func() bool
-	if entryPrice < ltp {
-		checkEntryCondition = func() bool {
-			return ltp <= entryPrice
-		}
-	} else {
-		checkEntryCondition = func() bool {
-			return ltp > entryPrice
-		}
-	}
-
-	// define goroutine to check entry condition on each ticker until timeout
-	ticker := time.NewTicker(2 * time.Second)
-	timeout := time.NewTimer(15 * time.Minute)
-	done := make(chan bool)
-	quit := make(chan bool)
-	go func() {
-		for {
-			select {
-			case <-timeout.C:
-				fmt.Println("Timeout..")
-				done <- true
-			case <-ticker.C:
-				ltp = getLtp(underlying_instrument_key)
-				fmt.Println("LTP: ", ltp, " seeking entry...")
-				if checkEntryCondition() {
-					fmt.Println("Entry condition met")
-					placeOrder(quantity, instrument_key, "BUY")
-					done <- true
-				}
-			case <-quit:
-				ticker.Stop()
-				return
-			}	
-		}
-	}()
-	<-done
-	quit <- true
-
-
-	// define goroutine to exit current position based off target and stoploss
-	checkExitCondition := func() bool {
-		if targetPrice > stoplossPrice {
-			return ltp >= targetPrice || ltp <= stoplossPrice
-		} else {
-			return ltp <= targetPrice || ltp >= stoplossPrice
-		}	
-	}
-
-	ticker = time.NewTicker(2 * time.Second)
-	timeout = time.NewTimer(30 * time.Minute)
-	done = make(chan bool)
-	quit = make(chan bool)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				ltp = getLtp(underlying_instrument_key)
-				fmt.Println("LTP: ", ltp, " seeking exit...")
-				if checkExitCondition() {
-					fmt.Println("Exit condition met")
-					placeOrder(quantity, instrument_key, "SELL")
-					done <- true
-				}
-			case <-timeout.C:
-				fmt.Println("Timeout.. exiting from order regardless of target or stoploss")
-				placeOrder(quantity, instrument_key, "SELL")
-				done <- true	
-			case <-quit:
-				ticker.Stop()
-				return
-			}	
-		}
-	}()
-	<-done
-	quit <- true
-}
-
-
-// Places an order with triggers on underlying price and would shift stoploss as the target is approaching
-func PlaceTrailingStopLossOrder(w http.ResponseWriter, r *http.Request) {
-
-}
-
-
-// Places an order with triggers on underlying price at lower quantity and would add more quantity based on reaffirmations on target/stoploss
-func PartialOrder(w http.ResponseWriter, r *http.Request) {
-	
 }
