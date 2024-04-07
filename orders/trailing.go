@@ -24,7 +24,7 @@ sell order - exit stoploss
 */
 
 // Places an order with triggers on underlying price but being able to modify target and stoploss in case of profit booking
-func PlaceTrailingStopLossOrder(w http.ResponseWriter, r *http.Request) {
+func PlaceTrailingOrder(w http.ResponseWriter, r *http.Request) {
 		// read query params
 		entry, target, stoploss := r.URL.Query().Get("entry"), r.URL.Query().Get("target"), r.URL.Query().Get("stoploss")
 		entryPrice, _ := strconv.ParseFloat(entry, 64)
@@ -134,7 +134,7 @@ func PlaceTrailingStopLossOrder(w http.ResponseWriter, r *http.Request) {
 		quit <- true
 }
 
-func ModifyTrailingStopLossOrder(w http.ResponseWriter, r *http.Request) {
+func ModifyTrailingOrder(w http.ResponseWriter, r *http.Request) {
 	target, stoploss := r.URL.Query().Get("target"), r.URL.Query().Get("stoploss")
 	targetPrice, _ := strconv.ParseFloat(target, 64)
 	stoplossPrice, _ := strconv.ParseFloat(stoploss, 64)

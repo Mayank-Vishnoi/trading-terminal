@@ -14,8 +14,8 @@ func registerRoutes(mux *http.ServeMux) {
 	// Orders
 	mux.HandleFunc("/order/place/ut", orders.PlaceUTOrder)
 	mux.HandleFunc("/order/place/paper", orders.PlaceUTPaperOrder)
-	mux.HandleFunc("/order/place/trailing", orders.PlaceTrailingStopLossOrder)
-	mux.HandleFunc("/order/modify/trailing", orders.ModifyTrailingStopLossOrder)
+	mux.HandleFunc("/order/place/trailing", orders.PlaceTrailingOrder)
+	mux.HandleFunc("/order/modify/trailing", orders.ModifyTrailingOrder)
 
 	// Risk Management
 
