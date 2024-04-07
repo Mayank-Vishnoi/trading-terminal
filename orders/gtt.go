@@ -14,12 +14,13 @@ func PlaceUTOrder(w http.ResponseWriter, r *http.Request) {
 	entryPrice, _ := strconv.ParseFloat(entry, 64)
 	targetPrice, _ := strconv.ParseFloat(target, 64)
 	stoplossPrice, _ := strconv.ParseFloat(stoploss, 64)
-	fmt.Println("Entry: ", entryPrice, ", Target: ", targetPrice, ", Stoploss: ", stoplossPrice)
+	duration, _ := strconv.Atoi(r.URL.Query().Get("duration"))
+	fmt.Println("Entry: ", entryPrice, ", Target: ", targetPrice, ", Stoploss: ", stoplossPrice, ", Duration: ", duration)
 
 	// get underlying instrument details
 	instrument_key := r.URL.Query().Get("instrument_key")
 	underlying_instrument_key, quantity := getUnderlyingDetails(instrument_key)
-	if underlying_instrument_key == "" || quantity == 0 {
+	if underlying_instrument_key == "" {
 		return
 	}
 
@@ -85,13 +86,14 @@ func PlaceUTOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ticker = time.NewTicker(2 * time.Second)
-	timeout = time.NewTimer(30 * time.Minute)
+	timeout = time.NewTimer(time.Duration(duration) * time.Minute)
 	done = make(chan bool)
 	quit = make(chan bool)
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
+				// fetch(): updaets target, stoploss
 				ltp = getLtp(underlying_instrument_key)
 				fmt.Println("LTP: ", ltp, " seeking exit...")
 				if checkExitCondition() {
