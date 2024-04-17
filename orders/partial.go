@@ -14,7 +14,7 @@ import (
 // complicated and having a lot of extra calls to their api
 
 // Places an order with triggers on underlying price at lower quantity and would add more quantity based on reaffirmations or stoploss
-func PartialOrder(w http.ResponseWriter, r *http.Request) {
+func PlacePartialOrder(w http.ResponseWriter, r *http.Request) {
 	entry, target, stoploss := r.URL.Query().Get("entry"), r.URL.Query().Get("target"), r.URL.Query().Get("stoploss")
 	entryPrice, _ := strconv.ParseFloat(entry, 64)
 	targetPrice, _ := strconv.ParseFloat(target, 64)
@@ -27,13 +27,9 @@ func PartialOrder(w http.ResponseWriter, r *http.Request) {
 
 	instrument_key := r.URL.Query().Get("instrument_key")
 	underlying_instrument_key, quantity := getUnderlyingDetails(instrument_key)
+	use(quantity)
 	// use quantity * 3 for normal ut orders, here we use quantity and quantity*2 after reaffirmation
 	if underlying_instrument_key == "" {
-		return
-	}
-
-	access_token := getAccessToken()
-	if access_token == "" {
 		return
 	}
 
@@ -67,7 +63,8 @@ func PartialOrder(w http.ResponseWriter, r *http.Request) {
 				ltp = getLtp(underlying_instrument_key)
 				fmt.Println("LTP: ", ltp)
 				if checkEntryCondition() {
-					placeOrder(quantity, instrument_key, "BUY")
+					// Commented just for testing purposes
+					// placeOrder(quantity, instrument_key, "BUY")
 					fmt.Println("Order placed on paper")
 					done <- true
 				}
@@ -117,31 +114,30 @@ func PartialOrder(w http.ResponseWriter, r *http.Request) {
 				ltp = getLtp(underlying_instrument_key)
 				fmt.Println("LTP: ", ltp)
 				if !lotsAdded && checkAddAtSL() {
-					placeOrder(quantity*2, instrument_key, "BUY")
+					// placeOrder(quantity*2, instrument_key, "BUY")
 					lotsAdded = true
 					fmt.Println("Added more lots at stoploss")
 				}
 				if !lotsAdded && checkAddAtReaffirmation() {
-					placeOrder(quantity*2, instrument_key, "BUY")
+					// placeOrder(quantity*2, instrument_key, "BUY")
 					stoplossPrice = newStoploss
 					targetPrice = newTarget
 					lotsAdded = true
 					fmt.Println("Added more lots at reaffirmation")
 				}
 				if checkExitCondition() {
-					if lotsAdded {
-						placeOrder(quantity*3, instrument_key, "SELL")
-					} else {
-						placeOrder(quantity, instrument_key, "SELL")
-					}
+					// this will never happen before adding lots
+					// placeOrder(quantity*3, instrument_key, "SELL")
 					fmt.Println("Position squared off due to exit conditions")
 					done <- true
 				}
 			case <-timeout.C:
 				if lotsAdded {
-					placeOrder(quantity*3, instrument_key, "SELL")
+					// placeOrder(quantity*3, instrument_key, "SELL")
+					use(lotsAdded)
 				} else {
-					placeOrder(quantity, instrument_key, "SELL")
+					// placeOrder(quantity, instrument_key, "SELL")
+					use(lotsAdded)
 				}	
 				fmt.Println("Exiting position due to timeout")
 				done <- true

@@ -23,12 +23,6 @@ func PlaceUTOrder(w http.ResponseWriter, r *http.Request) {
 	if underlying_instrument_key == "" {
 		return
 	}
-
-	// get access token
-	access_token := getAccessToken()
-	if access_token == "" {
-		return
-	}
 	
 	// define entry condition
 	var ltp float64

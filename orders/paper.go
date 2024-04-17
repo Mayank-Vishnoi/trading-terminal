@@ -9,7 +9,6 @@ import (
 
 // places order in the same way as underlying trigger order, but calculates the potential change in premium as instead of placing the order
 func PlaceUTPaperOrder(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Placing paper trade")
 	// use the input from terminal as getLTP(), keep that helper in this function itself?
 
 	entry, target, stoploss := r.URL.Query().Get("entry"), r.URL.Query().Get("target"), r.URL.Query().Get("stoploss")
@@ -24,19 +23,24 @@ func PlaceUTPaperOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	start_time := time.Now().Unix() 
-	access_token := getAccessToken()
-	if access_token == "" {
-		return
-	}
-	end_time := time.Now().Unix()
-	fmt.Println("Time taken to fetch token from redis: ", end_time - start_time)
+	// time to inititate connection and fetch from redis is 500ms
+	// start_time := time.Now().UnixNano()/int64(time.Millisecond)
+	// access_token := getAccessToken()
+	// if access_token == "" {
+	// 	return
+	// }
+	// end_time := time.Now().UnixNano()/int64(time.Millisecond)
+	// fmt.Println("Time taken to fetch token from redis: ", end_time - start_time)
 
 	var entry_premium, exit_premium, profit, entry_underlying, exit_unlerlying, capital float64
 	var entry_time, exit_time int64
 
+	// should I get token outside and pass it as parameter?
 	var ltp float64
+	// start_time := time.Now().UnixNano()/int64(time.Millisecond)
 	ltp = getLtp(underlying_instrument_key)
+	// end_time := time.Now().UnixNano()/int64(time.Millisecond)
+	// fmt.Println("Time taken to fetch ltp from upstox api(includes the time for getting access token): ", end_time - start_time)
 	if ltp == 0 {
 		return
 	}
@@ -74,7 +78,7 @@ func PlaceUTPaperOrder(w http.ResponseWriter, r *http.Request) {
 					// capital = premium * quantity
 					capital = entry_premium * float64(quantity)
 
-					fmt.Println("Order placed on paper")
+					fmt.Println("Order placed on paper, at: ", time.Now().Format("03:04:05 PM"))
 					done <- true
 				}
 			case <-quit:
@@ -85,6 +89,8 @@ func PlaceUTPaperOrder(w http.ResponseWriter, r *http.Request) {
 	}()
 	<-done
 	quit <- true
+
+	fmt.Println("sometimes this doesn't get executed after order placed. why is that!")
 
 	checkExitCondition := func() bool {
 		if targetPrice > stoplossPrice {
@@ -113,14 +119,14 @@ func PlaceUTPaperOrder(w http.ResponseWriter, r *http.Request) {
 					profit = (exit_premium - entry_premium) / entry_premium * 100
 					// note down current time
 					exit_time = time.Now().Unix()
-					fmt.Println("Order exited on paper due to exit conditions")
+					fmt.Println("Order exited on paper due to exit conditions, at: ", time.Now().Format("03:04:05 PM"))
 					done <- true
 				}
 			case <-timeout.C:
 				exit_premium = getLtp(instrument_key)
 				profit = (exit_premium - entry_premium) / entry_premium * 100
 				exit_time = time.Now().Unix()
-				fmt.Println("Order exited on paper due to timeout")
+				fmt.Println("Order exited on paper due to timeout, at: ", time.Now().Format("03:04:05 PM"))
 				done <- true
 			case <-quit:
 				ticker.Stop()

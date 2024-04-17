@@ -25,113 +25,118 @@ sell order - exit stoploss
 
 // Places an order with triggers on underlying price but being able to modify target and stoploss in case of profit booking
 func PlaceTrailingOrder(w http.ResponseWriter, r *http.Request) {
-		// read query params
-		entry, target, stoploss := r.URL.Query().Get("entry"), r.URL.Query().Get("target"), r.URL.Query().Get("stoploss")
-		entryPrice, _ := strconv.ParseFloat(entry, 64)
-		duration, _ := strconv.Atoi(r.URL.Query().Get("duration"))
-		fmt.Println("Entry: ", entryPrice, ", Target: ", target, ", Stoploss: ", stoploss, ", Duration: ", duration)
+	// read query params
+	entry, target, stoploss := r.URL.Query().Get("entry"), r.URL.Query().Get("target"), r.URL.Query().Get("stoploss")
+	entryPrice, _ := strconv.ParseFloat(entry, 64)
+	duration, _ := strconv.Atoi(r.URL.Query().Get("duration"))
+	fmt.Println("Entry: ", entryPrice, ", Target: ", target, ", Stoploss: ", stoploss, ", Duration: ", duration)
+
+	// get underlying instrument details
+	instrument_key := r.URL.Query().Get("instrument_key")
+	underlying_instrument_key, quantity := getUnderlyingDetails(instrument_key)
+	use(quantity) // commented for testing, clean and commit after successful testing
+	if underlying_instrument_key == "" {
+		return
+	}
+
+	redisClient, err := config.NewRedisClient(context.Background(), os.Getenv("REDIS_URL"))
+	if err != nil {
+		fmt.Println("Error initializing Redis client:", err)
+		return
+	}
+	_ = redisClient.SetVal(instrument_key + "_target", target)
+	_ = redisClient.SetVal(instrument_key + "_stoploss", stoploss)
+	_ = redisClient.SetVal(instrument_key + "_entry", entry)
 	
-		// get underlying instrument details
-		instrument_key := r.URL.Query().Get("instrument_key")
-		underlying_instrument_key, quantity := getUnderlyingDetails(instrument_key)
-		if underlying_instrument_key == "" {
-			return
+	// define entry condition
+	var ltp float64
+	ltp = getLtp(underlying_instrument_key)
+	if ltp == 0 {
+		return
+	}
+	var checkEntryCondition func() bool
+	if entryPrice < ltp {
+		checkEntryCondition = func() bool {
+			return ltp <= entryPrice
 		}
-	
-		redisClient, err := config.NewRedisClient(context.Background(), os.Getenv("REDIS_URL"))
-		if err != nil {
-			fmt.Println("Error initializing Redis client:", err)
-			return
+	} else {
+		checkEntryCondition = func() bool {
+			return ltp > entryPrice
 		}
-		_ = redisClient.SetVal(instrument_key + "_target", target)
-		_ = redisClient.SetVal(instrument_key + "_stoploss", stoploss)
-		_ = redisClient.SetVal(instrument_key + "_entry", entry)
-		
-		// define entry condition
-		var ltp float64
-		ltp = getLtp(underlying_instrument_key)
-		if ltp == 0 {
-			return
-		}
-		var checkEntryCondition func() bool
-		if entryPrice < ltp {
-			checkEntryCondition = func() bool {
-				return ltp <= entryPrice
-			}
-		} else {
-			checkEntryCondition = func() bool {
-				return ltp > entryPrice
-			}
-		}
-	
-		// define goroutine to check entry condition on each ticker until timeout
-		ticker := time.NewTicker(2 * time.Second)
-		timeout := time.NewTimer(15 * time.Minute)
-		done := make(chan bool)
-		quit := make(chan bool)
-		go func() {
-			for {
-				select {
-				case <-timeout.C:
-					fmt.Println("Timeout..")
+	}
+
+	// define goroutine to check entry condition on each ticker until timeout
+	ticker := time.NewTicker(2 * time.Second)
+	timeout := time.NewTimer(15 * time.Minute)
+	done := make(chan bool)
+	quit := make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-timeout.C:
+				fmt.Println("Timeout..")
+				done <- true
+			case <-ticker.C:
+				ltp = getLtp(underlying_instrument_key)
+				fmt.Println("LTP: ", ltp)
+				if checkEntryCondition() {
+					fmt.Println("Entry condition met, placing buy order...")
+					// placeOrder(quantity, instrument_key, "BUY")
 					done <- true
-				case <-ticker.C:
-					ltp = getLtp(underlying_instrument_key)
-					fmt.Println("LTP: ", ltp, " seeking entry...")
-					if checkEntryCondition() {
-						fmt.Println("Entry condition met")
-						placeOrder(quantity, instrument_key, "BUY")
-						done <- true
-					}
-				case <-quit:
-					ticker.Stop()
-					return
-				}	
-			}
-		}()
-		<-done
-		quit <- true
-	
-		// get perhaps updated target and stoploss
-		checkExitCondition := func() bool {
-			target, _ = redisClient.GetVal(instrument_key + "_target")
-			stoploss, _ = redisClient.GetVal(instrument_key + "_stoploss")
-			targetPrice, _ := strconv.ParseFloat(target, 64)
-			stoplossPrice, _ := strconv.ParseFloat(stoploss, 64)
-			if targetPrice > stoplossPrice {
-				return ltp >= targetPrice || ltp <= stoplossPrice
-			} else {
-				return ltp <= targetPrice || ltp >= stoplossPrice
+				}
+			case <-quit:
+				ticker.Stop()
+				return
 			}	
 		}
-	
-		ticker = time.NewTicker(2 * time.Second)
-		timeout = time.NewTimer(time.Duration(duration) * time.Minute)
-		done = make(chan bool)
-		quit = make(chan bool)
-		go func() {
-			for {
-				select {
-				case <-ticker.C:
-					ltp = getLtp(underlying_instrument_key)
-					fmt.Println("LTP: ", ltp, " seeking exit...")
-					if checkExitCondition() {
-						fmt.Println("Exit condition met")
-						placeOrder(quantity, instrument_key, "SELL")
-						done <- true
-					}
-				case <-timeout.C:
-					fmt.Println("Timeout.. exiting from order regardless of target or stoploss")
-					placeOrder(quantity, instrument_key, "SELL")
-					done <- true	
-				case <-quit:
-					ticker.Stop()
-					return
-				}	
-			}
-		}()
-		<-done
-		quit <- true
+	}()
+	<-done
+	quit <- true
+
+	// get perhaps updated target and stoploss: 
+	// but is there a way to get them by another signal in the routine instead of fetching them every 2 seconds?
+	checkExitCondition := func() bool {
+		start_time := time.Now().UnixNano()/int64(time.Millisecond)
+		target, _ = redisClient.GetVal(instrument_key + "_target")
+		end_time := time.Now().UnixNano()/int64(time.Millisecond)
+		fmt.Println("Time taken to fetch target from redis(without the initialization of client): ", end_time - start_time)
+		stoploss, _ = redisClient.GetVal(instrument_key + "_stoploss")
+		targetPrice, _ := strconv.ParseFloat(target, 64)
+		stoplossPrice, _ := strconv.ParseFloat(stoploss, 64)
+		if targetPrice > stoplossPrice {
+			return ltp >= targetPrice || ltp <= stoplossPrice
+		} else {
+			return ltp <= targetPrice || ltp >= stoplossPrice
+		}	
+	}
+
+	ticker = time.NewTicker(2 * time.Second)
+	timeout = time.NewTimer(time.Duration(duration) * time.Minute)
+	done = make(chan bool)
+	quit = make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				ltp = getLtp(underlying_instrument_key)
+				fmt.Println("LTP: ", ltp)
+				if checkExitCondition() {
+					fmt.Println("Exit condition met, placing sell order...")
+					// placeOrder(quantity, instrument_key, "SELL")
+					done <- true
+				}
+			case <-timeout.C:
+				fmt.Println("Timeout! Exiting from order regardless of target or stoploss...")
+				// placeOrder(quantity, instrument_key, "SELL")
+				done <- true	
+			case <-quit:
+				ticker.Stop()
+				return
+			}	
+		}
+	}()
+	<-done
+	quit <- true
 }
 
 func ModifyTrailingOrder(w http.ResponseWriter, r *http.Request) {

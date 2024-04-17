@@ -220,3 +220,8 @@ func getLtp(instrument_key string) float64 {
 	}
 	return ltp
 }
+
+// function to deal with go being overprotective
+func use(thing any) {
+	_ = thing
+}
