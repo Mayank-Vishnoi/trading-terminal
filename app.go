@@ -8,8 +8,6 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 )
 
-// Previous flow: hit the login endpoint to get the authorization code, save that code in the .env file everytime before running the server. Get the token in the main context and pass it around.
-// Current flow: get auth code, hit gettoken api and save that manually in the .env, restart the server should be good for 1 day.
 func main() {
 	mux := http.NewServeMux()
 	registerRoutes(mux)

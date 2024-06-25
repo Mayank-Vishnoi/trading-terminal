@@ -1,5 +1,14 @@
 package config
 
+/*
+ * This is just a simple way to store the token in the context.
+ * Previous flow:
+ * Hit the login endpoint to get the authorization code
+ * Save that code in the .env file
+ * Restart the server
+ * Get the token in the main context and pass it around.
+ */
+
 import "context"
 
 type contextKey string
