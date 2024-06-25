@@ -19,6 +19,7 @@ type Worker interface {
 }
 
 // Improvement: use a base struct in both EntryWorker and ExitWorker
+// Alternatively: use a common struct for both EntryWorker and ExitWorker with just having a type field, advantge is that we can get the entry details too from the exit worker in case of validations
 
 type EntryWorker struct {
 	id         string
@@ -85,7 +86,7 @@ func (w *EntryWorker) Start(ctx context.Context) error {
 				fmt.Println("LTP: ", ltp, " seeking entry...")
 				if checkEntryCondition() {
 					fmt.Println("Entry condition met.. Placing order")
-					// utility.PlaceOrder(quantity, instrument_key, "BUY")
+					// utility.PlaceOrder(w.quantity, w.instrument, "BUY")
 					w.entered <- struct{}{}
 					return
 				}
@@ -159,6 +160,7 @@ func (w *ExitWorker) Start(ctx context.Context) error {
 
 	ticker_duration, _ := strconv.Atoi(os.Getenv("TICKER_DURATION"))
 	ticker := time.NewTicker(time.Duration(ticker_duration) * time.Second)
+	defer ticker.Stop()
 	go func() {
 		for {
 			select {
@@ -166,14 +168,13 @@ func (w *ExitWorker) Start(ctx context.Context) error {
 				ltp = utility.GetLtp(w.underlying)
 				fmt.Println("LTP: ", ltp, " seeking exit...")
 				if checkExitCondition() {
-					// Utility.PlaceOrder(quantity, instrument_key, "SELL")
+					// utility.PlaceOrder(w.quantity, w.instrument, "SELL")
 					fmt.Println("Exiting position because conditions are met..")
 					w.exited <- struct{}{}
 					return
 				}
 			case <-ctx.Done():
-				// Utility.PlaceOrder(quantity, instrument_key, "SELL")
-				w.cancelled <- struct{}{}
+				// utility.PlaceOrder(w.quantity, w.instrument, "SELL")
 				return
 			}
 		}
@@ -181,6 +182,7 @@ func (w *ExitWorker) Start(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		w.cancelled <- struct{}{}
 		delete(workers, w.id)
 		return ctx.Err()
 	case <-w.exited:
@@ -226,8 +228,10 @@ func ManageWorkers() {
 		case worker := <-addWorker:
 			workers[worker.GetID()] = worker
 			wg.Add(1) // use, wg.wait() in case you want to wait for all workers to complete
+			fmt.Println("Adding worker: ", worker.GetID())
 			go startWorker(worker)
 		case id := <-cancelWorker:
+			fmt.Println("Cancelling worker: ", id)
 			cancelWorkerByID(id)
 		}
 	}
@@ -242,15 +246,13 @@ func cancelWorkerByID(id string) {
 	}
 }
 
-func GetWorkerDetails(id string) (instrument, underlying string, quantity int) {
+func GetWorkerDetails(id string) (instrument, underlying string, quantity int, target, stoploss float64) {
 	if worker, ok := workers[id]; ok {
-		if entryWorker, ok := worker.(*EntryWorker); ok {
-			return entryWorker.instrument, entryWorker.underlying, entryWorker.quantity
-		} else if exitWorker, ok := worker.(*ExitWorker); ok {
-			return exitWorker.instrument, exitWorker.underlying, exitWorker.quantity
+		if exitWorker, ok := worker.(*ExitWorker); ok {
+			return exitWorker.instrument, exitWorker.underlying, exitWorker.quantity, exitWorker.target, exitWorker.stoploss
 		}
 	}
-	return "", "", 0
+	return "", "", 0, 0, 0
 }
 
 
