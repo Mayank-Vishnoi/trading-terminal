@@ -1,29 +1,24 @@
 package authentication
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"myapp/config"
 	"myapp/models"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
-
-	_ "github.com/joho/godotenv/autoload"
 )
 
 const redirect_uri string = "http://localhost:8080/auth/callback"
 
 func TokenHandler(w http.ResponseWriter, r *http.Request) {
 	apiURL := "https://api.upstox.com/v2/login/authorization/token"
-	code := r.URL.Query().Get("code")
 
 	// Set the request data
 	data := url.Values{}
-	data.Set("code", code)
+	data.Set("code", r.URL.Query().Get("code"))
 	data.Set("client_id", os.Getenv("API_KEY"))
 	data.Set("client_secret", os.Getenv("API_SECRET"))
 	data.Set("redirect_uri", redirect_uri)
@@ -47,7 +42,7 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println("Error performing request:", err)
-		return
+		return 
 	}
 	defer resp.Body.Close()
 
@@ -55,7 +50,7 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println("Error reading response body:", err)
-		return
+		return 
 	}
 
 	// Parse the response body
@@ -63,22 +58,11 @@ func TokenHandler(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(body, &tokenResp)
 	if err != nil {
 		fmt.Println("Error parsing:", err)
-		return
-	}
-	
-	// Store the access token in Redis
-	redisClient, err := config.NewRedisClient(context.Background(), os.Getenv("REDIS_URL"))
-	if err != nil {
-		fmt.Println("Error initializing Redis client:", err)
-		return
-	}
-	err = redisClient.SetVal("access_token", tokenResp.AccessToken)
-	if err != nil {
-		fmt.Println("Error setting access token:", err)
-		return
+		return 
 	}
 
-	fmt.Println("Access token was retrieved successfully")
+	// Save the access token in the environment
+	fmt.Println("Access token:", tokenResp.AccessToken)
 }
 
 
@@ -94,18 +78,7 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the access token from Redis
-	redisClient, err := config.NewRedisClient(context.Background(), os.Getenv("REDIS_URL"))
-	if err != nil {
-		fmt.Println("Error initializing Redis client:", err)
-		return
-	}
-	access_token, err := redisClient.GetVal("access_token")
-	if err != nil {
-		fmt.Println("Error getting access token:", err)
-		return
-	}
-
+	access_token := os.Getenv("ACCESS_TOKEN")
 	req.Header.Add("Authorization", "Bearer " + access_token)
 	req.Header.Add("Accept", "application/json")
 
