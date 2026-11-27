@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"myapp/config"
 	"myapp/workers"
 	"net/http"
 
@@ -9,6 +11,10 @@ import (
 )
 
 func main() {
+	if err := config.Load("config.json"); err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
 	registerRoutes(mux)
 

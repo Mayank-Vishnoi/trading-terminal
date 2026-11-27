@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"myapp/config"
 	"myapp/models"
 	"myapp/utility"
 	"myapp/workers"
@@ -54,14 +55,14 @@ func getUnderlyingDetails(instrument_key string, partial bool) (string, int) {
 	for key := range ltpResp.Data {
 		if strings.Contains(key, "BANKNIFTY") {
 			underlying_instrument_key = "NSE_INDEX|Nifty Bank"
-			quantity, _ = strconv.Atoi(os.Getenv("BANKNIFTY_LOTS"))
+			quantity = config.App.BankNiftyLots
 			if partial {
 				quantity = quantity / 3
 			}
 			quantity = quantity * 15
 		} else if strings.Contains(key, "NIFTY") {
 			underlying_instrument_key = "NSE_INDEX|Nifty 50"
-			quantity, _ = strconv.Atoi(os.Getenv("NIFTY_LOTS"))
+			quantity = config.App.NiftyLots
 			if partial {
 				quantity = quantity / 3
 			}

@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"myapp/config"
 	"myapp/utility"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,8 +74,7 @@ func (w *EntryWorker) Start(ctx context.Context) error {
 		}
 	}
 
-	ticker_duration, _ := strconv.Atoi(os.Getenv("TICKER_DURATION"))
-	ticker := time.NewTicker(time.Duration(ticker_duration) * time.Second)
+	ticker := time.NewTicker(config.App.Ticker())
 	defer ticker.Stop()
 	go func() {
 		for {
@@ -158,8 +156,7 @@ func (w *ExitWorker) Start(ctx context.Context) error {
 		}
 	}
 
-	ticker_duration, _ := strconv.Atoi(os.Getenv("TICKER_DURATION"))
-	ticker := time.NewTicker(time.Duration(ticker_duration) * time.Second)
+	ticker := time.NewTicker(config.App.Ticker())
 	defer ticker.Stop()
 	go func() {
 		for {
@@ -208,8 +205,7 @@ func CancelWorker(id string) {
 
 func startWorker(worker Worker) {
 	defer wg.Done()
-	hold_duration, _ := strconv.Atoi(os.Getenv("HOLD_DURATION"))
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(hold_duration)*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), config.App.Hold())
 	switch w := worker.(type) {
 	case *EntryWorker:
 		w.cancel = cancel

@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const redirect_uri string = "http://localhost:8080/auth/callback"
+const redirect_uri string = "http://localhost:8080/auth/gettoken"
 
 func TokenHandler(w http.ResponseWriter, r *http.Request) {
 	apiURL := "https://api.upstox.com/v2/login/authorization/token"

@@ -1,0 +1,6 @@
+{
+  "nifty_lots": 3,
+  "banknifty_lots": 3,
+  "ticker_seconds": 1,
+  "hold_minutes": 375
+}
