@@ -9,6 +9,7 @@ import (
 	"myapp/utility"
 	"myapp/workers"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -22,11 +23,10 @@ func getUnderlyingDetails(instrument_key string, partial bool) (string, int) {
 	var underlying_instrument_key string
 	var quantity int
 
-	baseURL := "https://api.upstox.com/v2/market-quote/ltp"
-	url := fmt.Sprintf("%s?instrument_key=%s", baseURL, instrument_key)
+	endpoint := "https://api.upstox.com/v2/market-quote/ltp?" + url.Values{"instrument_key": {instrument_key}}.Encode()
 
 	client := &http.Client{}
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req, _ := http.NewRequest(http.MethodGet, endpoint, nil)
 
 	access_token := os.Getenv("ACCESS_TOKEN")
 	if access_token == "" {

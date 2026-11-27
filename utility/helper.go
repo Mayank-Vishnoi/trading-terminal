@@ -7,16 +7,16 @@ import (
 	"io"
 	"myapp/models"
 	"net/http"
+	"net/url"
 	"os"
 )
 
 // getLTP
 func GetLtp(instrument_key string) float64 {
-	baseURL := "https://api.upstox.com/v2/market-quote/ltp"
-	url := fmt.Sprintf("%s?instrument_key=%s", baseURL, instrument_key)
+	endpoint := "https://api.upstox.com/v2/market-quote/ltp?" + url.Values{"instrument_key": {instrument_key}}.Encode()
 
 	client := &http.Client{}
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req, _ := http.NewRequest(http.MethodGet, endpoint, nil)
 	access_token := os.Getenv("ACCESS_TOKEN")
 	req.Header.Add("Authorization", "Bearer "+access_token)
 	req.Header.Add("Accept", "application/json")
